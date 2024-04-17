@@ -39,6 +39,17 @@ public class MoveValidator {
         }
         return finalMoves;
     }
+    public boolean checkmate(Board board, List<Figure> figures) {
+        for (Figure myFigure : figures) {
+            for (Coordinates coords : possiblesWithEnPassant(myFigure, board)) {
+                boolean result = canMove(coords, board, myFigure, selectedFigure.color, getOpponentColor(selectedFigure.color));
+                if (result) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
 
     public List<Coordinates> possiblesWithEnPassant(Figure figure, Board board){
         if(figure instanceof Pawn && enPassantFrom != null && enPassantTo != null && board.getElementCoordinates(figure).getRow() == enPassantTo.getRow()){
@@ -72,17 +83,7 @@ public class MoveValidator {
         return false;
     }
 
-    public boolean checkmate(Board board, List<Figure> figures) {
-        for (Figure myFigure : figures) {
-            for (Coordinates coords : possiblesWithEnPassant(myFigure, board)) {
-                boolean result = canMove(coords, board, myFigure, selectedFigure.color, getOpponentColor(selectedFigure.color));
-                if (result) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
+
 
     public boolean canMove(Coordinates coordinatesToMove, Board board, Figure figure, String figuresColor, String kingColor) {
         Coordinates selfCoordinates = board.getElementCoordinates(figure);

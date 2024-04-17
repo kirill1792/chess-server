@@ -38,7 +38,7 @@ public class PlayServer {
         try {
             started = false;
             serverSocket.close();
-            playerSockets.values().forEach(PlayServer::closeClientSocket);
+            playerSockets.values().forEach(this::closeClientSocket);
             playerSockets.clear();
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -48,7 +48,12 @@ public class PlayServer {
     public boolean removePlayer(long playerId) {
         ClientSocket removedSocket = playerSockets.remove(playerId);
         if (removedSocket != null) {
-            closeClientSocket(removedSocket);
+            try {
+                System.out.printf("Closed socket for playerId: %s\n", playerId);
+                closeClientSocket(removedSocket);
+            } catch (Exception e) {
+                e.printStackTrace(System.out);
+            }
         }
         return removedSocket != null;
     }
@@ -94,7 +99,7 @@ public class PlayServer {
         }
     }
 
-    private static void closeClientSocket(ClientSocket socket) {
+    private void closeClientSocket(ClientSocket socket) {
         try {
             socket.close();
         } catch (Exception e) {
@@ -107,6 +112,7 @@ public class PlayServer {
         String playerData = receiveData(clientSocket);
         long playerId = Long.parseLong(playerData);
         System.out.printf("Received playerId: %s\n", playerId);
+        removePlayer(playerId);
         playerSockets.put(playerId, clientSocket);
     }
 

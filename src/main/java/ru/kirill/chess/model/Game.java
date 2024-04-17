@@ -1,12 +1,13 @@
 package ru.kirill.chess.model;
 
 import ru.kirill.chess.MoveResponse;
+import ru.kirill.chess.dao.UserDao;
 import ru.kirill.chess.model.figure.*;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 
 public class Game {
 
@@ -23,6 +24,10 @@ public class Game {
     private List<String> boardStates = new ArrayList<>();
     private boolean repeat = false;
 
+    private HashMap<NewFigureType, String> figCodes = new HashMap<>();
+
+    private String curGame = "";
+
     public GetMove getCurrentMove() {
         return currentMove;
     }
@@ -35,16 +40,25 @@ public class Game {
         this.id = id;
         this.playerOne = playerOne;
         this.playerTwo = playerTwo;
+        setFigCodes();
 
         setUpGame();
         boardStates.add(encodeBoard());
     }
 
+    private void setFigCodes(){
+        figCodes.put(NewFigureType.BISHOP, "B");
+        figCodes.put(NewFigureType.KNIGHT, "K");
+        figCodes.put(NewFigureType.ROOK, "R");
+        figCodes.put(NewFigureType.QUEEN, "Q");
+    }
+
     public MoveResponse move(Coordinates moveFrom, Coordinates moveTo, int playerId, NewFigureType figureType){
         System.out.println(turn.getMyFigures());
         Figure currentFigure = board.getFields().get(moveFrom.getRow()).get(moveFrom.getColumn());
+        boolean encoded = false;
         if(turn.getId() != playerId || !turn.getMyFigures().contains(currentFigure)){
-            return new MoveResponse(AfterMoveStatus.FAIL, null);
+            return new MoveResponse(AfterMoveStatus.FAIL, null, -1);
         }
         MoveValidator validator = new MoveValidator(board, currentFigure, enPassantFrom, enPassantTo);
         List<Coordinates> moves = validator.findFinalMoves();
@@ -54,6 +68,8 @@ public class Game {
                 if (moveTo.equals(new Coordinates(enPassantTo.getRow() - pawn.direction, enPassantTo.getColumn()))) {
                     board.setCell(enPassantTo.getRow(), enPassantTo.getColumn(), null);
                     board.setCell(enPassantTo.getRow() - pawn.direction, enPassantTo.getColumn(), pawn);
+                    curGame = encodeMove(moveFrom, moveTo, enPassantTo);
+                    encoded = true;
                 }
             }
             enPassantFrom = null;
@@ -73,6 +89,7 @@ public class Game {
                 board.setCell(rookTo.getRow(), rookTo.getColumn(), rook);
                 rook.isMoved = true;
                 currentFigure.isMoved = true;
+                curGame = encodeMove(moveFrom, moveTo, rookCords, rookTo);
                 return afterMoveProcess(currentFigure, moveFrom, moveTo, figureType, rookCords, rookTo);
             }
             if (figureType != null){
@@ -90,6 +107,8 @@ public class Game {
                     currentFigure = new Knight(turn.getColor());
                 }
                 turn.getMyFigures().add(currentFigure);
+                curGame = encodeMove(moveFrom, moveTo, figureType);
+                encoded = true;
             }
             Figure nextCell = board.getFields().get(moveTo.getRow()).get(moveTo.getColumn());
             if(nextCell != null){
@@ -106,6 +125,9 @@ public class Game {
             board.setCell(moveTo.getRow(), moveTo.getColumn(), currentFigure);
             currentFigure.isMoved = true;
             turn.getMyKing().isChecked = false;
+            if(!encoded) {
+                curGame = encodeMove(moveFrom, moveTo);
+            }
 
             String state = encodeBoard();
             boardStates.add(state);
@@ -115,7 +137,7 @@ public class Game {
             return afterMoveProcess(currentFigure, moveFrom, moveTo, figureType, null, null);
         }
         else {
-            return new MoveResponse(AfterMoveStatus.FAIL, null);
+            return new MoveResponse(AfterMoveStatus.FAIL, null, -1);
         }
     }
 
@@ -125,32 +147,44 @@ public class Game {
         if (validator.checkForCheck(board.getElementCoordinates(getNoTurn().getMyKing()), board, turn.getColor())){
             getNoTurn().getMyKing().isChecked = true;
             if (validator.checkmate(board, getNoTurn().getMyFigures())){
-                currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.CHECKMATE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), null);
-                return new MoveResponse(AfterMoveStatus.CHECKMATE, null);
+                ArrayList<Integer> ratings = new ArrayList<>();
+                ratings.add(turn.getRating() + 20);
+                ratings.add(getNoTurn().getRating() - 20);
+                currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.CHECKMATE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), null, ratings.get(1));
+                updateData(ratings, turn, getNoTurn(), false);
+                return new MoveResponse(AfterMoveStatus.CHECKMATE, null, ratings.get(0));
             }
             //return AfterMoveStatus.SUCCESS;
         }
         else {
             if (validator.checkmate(board, getNoTurn().getMyFigures())){
                 System.out.println("ПАТ");
-                currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.STALEMATE);
-                return new MoveResponse(AfterMoveStatus.TIE, TieType.STALEMATE);
+                ArrayList<Integer> ratings = calcRating(true);
+                currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.STALEMATE, ratings.get(1));
+                updateData(ratings, turn, getNoTurn(), true);
+                return new MoveResponse(AfterMoveStatus.TIE, TieType.STALEMATE, ratings.get(0));
             }
         }
         if(repeat){
-            currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.REPETITION);
-            return new MoveResponse(AfterMoveStatus.TIE, TieType.REPETITION);
+            ArrayList<Integer> ratings = calcRating(true);
+            currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.REPETITION, ratings.get(1));
+            updateData(ratings, turn, getNoTurn(), true);
+            return new MoveResponse(AfterMoveStatus.TIE, TieType.REPETITION, ratings.get(0));
         }
         if (lackOfFigs()){
-            currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.LACK_OF_FIGS);
-            return new MoveResponse(AfterMoveStatus.TIE, TieType.LACK_OF_FIGS);
+            ArrayList<Integer> ratings = calcRating(true);
+            currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.LACK_OF_FIGS, ratings.get(1));
+            updateData(ratings, turn, getNoTurn(), true);
+            return new MoveResponse(AfterMoveStatus.TIE, TieType.LACK_OF_FIGS, ratings.get(0));
         }
         if(tieMovesCounter == 100){
-            currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.MOVES_LIMITED);
-            return new MoveResponse(AfterMoveStatus.TIE, TieType.MOVES_LIMITED);
+            ArrayList<Integer> ratings = calcRating(true);
+            currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.TIE, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), TieType.MOVES_LIMITED, ratings.get(1));
+            updateData(ratings, turn, getNoTurn(), true);
+            return new MoveResponse(AfterMoveStatus.TIE, TieType.MOVES_LIMITED, ratings.get(0));
         }
-        currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.SUCCESS, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), null);
-        return new MoveResponse(AfterMoveStatus.SUCCESS, null);
+        currentMove = new GetMove(parser.notate(moveFrom), parser.notate(moveTo), AfterMoveStatus.SUCCESS, getNoTurn().getId(), figureType, parser.notate(rookFrom), parser.notate(rookTo), null, -1);
+        return new MoveResponse(AfterMoveStatus.SUCCESS, null, -1);
 //        else {
 //            if (validator.checkmate(board, getNoTurn().getMyFigures())){
 //                System.out.println("ПАТ");
@@ -160,6 +194,89 @@ public class Game {
 //                return AfterMoveStatus.SUCCESS;
 //            }
 //        }
+    }
+
+    private void addGame(UserDao dao, Player first, Player second, boolean isTie){
+        try {
+            dao.insertGame(new ChessGame(0, getCurrentTime(), new User(first.getId(), first.getName(), "", 0),
+                    new User(second.getId(), second.getName(), "", 0), movedFirst(first, second), curGame, isTie));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void updateData(ArrayList<Integer> arr, Player first, Player second, boolean isTie){
+        UserDao dao = new UserDao();
+        updateRatings(arr, first.getId(), second.getId(), dao);
+        addGame(dao, first, second, isTie);
+    }
+
+    private int movedFirst(Player first, Player second){
+        if(first.getColor().equals("white")){
+            return first.getId();
+        }
+        else {
+            return second.getId();
+        }
+    }
+
+    private String getCurrentTime(){
+        LocalDateTime myDateObj = LocalDateTime.now();
+        DateTimeFormatter myFormatObj = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
+        return myDateObj.format(myFormatObj);
+    }
+
+    private String encodeMove(Coordinates from, Coordinates to){
+        return curGame + from.getRow() + from.getColumn() + "-" + to.getRow() + to.getColumn() + "|";
+    }
+
+    private String encodeMove(Coordinates from, Coordinates to, Coordinates rookFrom, Coordinates rookTo){
+        String type = "S";
+        if(Math.abs(rookTo.getColumn() - rookFrom.getColumn()) == 3){
+            type = "L";
+        }
+        return curGame + type + from.getRow() + from.getColumn() + "-" + to.getRow() + to.getColumn() + ":" + rookFrom.getRow() + rookFrom.getColumn() + "-" + rookTo.getRow() + rookTo.getColumn() + "|";
+    }
+
+    private String encodeMove(Coordinates from, Coordinates to, Coordinates epTo){
+        return curGame + "E" + from.getRow() + from.getColumn() + "-" + to.getRow() + to.getColumn() + ":" + epTo.getRow() + epTo.getColumn() + "|";
+    }
+
+    private String encodeMove(Coordinates from, Coordinates to, NewFigureType type){
+        return curGame + figCodes.get(type) + from.getRow() + from.getColumn() + "-" + to.getRow() + to.getColumn() + "|";
+    }
+
+
+    private void updateRatings(ArrayList<Integer> arr, int idFirst, int idSecond, UserDao dao){
+        try {
+            dao.updateRating(idFirst, arr.get(0));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            dao.updateRating(idSecond, arr.get(1));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private ArrayList<Integer> calcRating(boolean isTie){
+        ArrayList<Integer> arr = new ArrayList<>();
+        double sA = 1;
+        double sB = 0;
+        if(isTie){
+            sA = 0.5;
+            sB = 0.5;
+        }
+        double eA = (1 / (1 + Math.pow(10, getNoTurn().getRating() - turn.getRating())));
+        double eB = (1 / (1 + Math.pow(10, turn.getRating() - getNoTurn().getRating())));
+        int rA = (int) Math.round(turn.getRating() + 20 * (sA - eA));
+        int rB = (int) Math.round(getNoTurn().getRating() + 20 * (sB - eB));
+        rA = turn.getRating() + 20;
+        rB = getNoTurn().getRating() - 20;
+        arr.add(rA);
+        arr.add(rB);
+        return arr;
     }
 
     private String encodeBoard(){

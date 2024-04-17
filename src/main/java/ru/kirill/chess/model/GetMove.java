@@ -11,7 +11,9 @@ public class GetMove {
     private String rookTo;
     private TieType tieType;
 
-    public GetMove(String moveFrom, String moveTo, AfterMoveStatus status, int id, NewFigureType figureType, String rookFrom, String rookTo, TieType tieType){
+    private int newRating;
+
+    public GetMove(String moveFrom, String moveTo, AfterMoveStatus status, int id, NewFigureType figureType, String rookFrom, String rookTo, TieType tieType, int newRating){
         this.moveFrom = moveFrom;
         this.moveTo = moveTo;
         this.status = status;
@@ -20,6 +22,15 @@ public class GetMove {
         this.rookFrom = rookFrom;
         this.rookTo = rookTo;
         this.tieType = tieType;
+        this.newRating = newRating;
+    }
+
+    public int getNewRating() {
+        return newRating;
+    }
+
+    public void setNewRating(int newRating) {
+        this.newRating = newRating;
     }
 
     public TieType getTieType() {

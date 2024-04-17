@@ -18,7 +18,6 @@ public class PlayService {
     private final Map<Integer, Game> gamesByPlayer = new ConcurrentHashMap<>();
     private final AtomicInteger playerIdCounter = new AtomicInteger();
     private final AtomicInteger gameIdCounter = new AtomicInteger();
-
     public PlayService() {
         Runnable task = () -> {
             while (true) {
@@ -48,11 +47,8 @@ public class PlayService {
         thread.start();
     }
 
-    public Player create(String name){
-        final int playerId =  playerIdCounter.incrementAndGet();
-        Player player = new Player(name, playerId);
-        players.put(playerId, player);
-        return player;
+    public void regPlayer(Player player){
+        players.put(player.getId(), player);
     }
 
     public Game getGameByPlayerId(int playerId) {

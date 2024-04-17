@@ -12,10 +12,18 @@ public class Player {
     private String color;
     private List<Figure> myFigures;
     private King myKing;
+    private int rating;
 
-    public Player(String name, int id) {
+    public Player(String name, int id, int rating) {
         this.name = name;
         this.id = id;
+        this.rating = rating;
+    }
+
+    public Player(User user) {
+        this.name = user.getName();
+        this.id = user.getId();
+        this.rating = user.getRating();
     }
 
     public void setMyKing() {
@@ -25,6 +33,14 @@ public class Player {
                 break;
             }
         }
+    }
+
+    public int getRating() {
+        return rating;
+    }
+
+    public void setRating(int rating) {
+        this.rating = rating;
     }
 
     public King getMyKing() {

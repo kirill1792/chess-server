@@ -5,9 +5,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.kirill.chess.Response1;
+import ru.kirill.chess.dao.UserDao;
 import ru.kirill.chess.model.Game;
 import ru.kirill.chess.model.Player;
+import ru.kirill.chess.model.User;
 import ru.kirill.chess.service.PlayService;
+
+import java.util.ArrayList;
 
 @RestController
 public class PlayController {
@@ -16,9 +20,15 @@ public class PlayController {
 	private PlayService playService;
 
 	@GetMapping("/play")
-	public Response1 play(@RequestParam String name) throws Exception {
-		System.out.printf("Received play request with player name %s\n", name);
-		Player player = playService.create(name);
+	public Response1 play(@RequestParam int id) throws Exception {
+		System.out.printf("Received play request with player id %s\n", id);
+		UserDao dao = new UserDao();
+		ArrayList<User> us = dao.findUserById(id);
+		if(us.isEmpty()){
+			return null;
+		}
+		Player player = new Player(us.get(0));
+		playService.regPlayer(player);
 		System.out.printf("Created new player: %s\n", player);
 		Response1 response1 = null;
 		while (response1 == null) {

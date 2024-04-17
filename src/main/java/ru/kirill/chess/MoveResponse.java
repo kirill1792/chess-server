@@ -7,9 +7,20 @@ public class MoveResponse {
     private AfterMoveStatus status;
     private TieType tieType;
 
-    public MoveResponse(AfterMoveStatus status, TieType tieType) {
+    private int newRating;
+
+    public MoveResponse(AfterMoveStatus status, TieType tieType, int newRating) {
         this.status = status;
         this.tieType = tieType;
+        this.newRating = newRating;
+    }
+
+    public int getNewRating() {
+        return newRating;
+    }
+
+    public void setNewRating(int newRating) {
+        this.newRating = newRating;
     }
 
     public AfterMoveStatus getStatus() {
